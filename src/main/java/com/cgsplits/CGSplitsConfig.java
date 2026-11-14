@@ -23,10 +23,22 @@ public interface CGSplitsConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "hideGauntletTimer",
+		name = "Replace Gauntlet Timer",
+		description = "While Show Timer is on, turn off the timer overlay from The Gauntlet plugin so only one timer shows. "
+			+ "It's turned back on if you switch this or Show Timer off, or disable CG Splits. The Gauntlet plugin itself stays on",
+		position = 1
+	)
+	default boolean hideGauntletTimer()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "timerPrecision",
 		name = "Timer Precision",
 		description = "Ticks: the timer updates every game tick (6.0, 6.6, 7.2). Seconds: no decimals (6, 7, 8)",
-		position = 1
+		position = 2
 	)
 	default TimerPrecision timerPrecision()
 	{
@@ -37,7 +49,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "showHalfHpSplit",
 		name = "Show 50% HP Split",
 		description = "Add a line to the timer with the time from the start of the run until the Hunllef reached 50% HP",
-		position = 2
+		position = 3
 	)
 	default boolean showHalfHpSplit()
 	{
@@ -48,7 +60,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "showSessionOverlay",
 		name = "Show Session Overlay",
 		description = "Show a separate on-screen box with this session's stats while in the Gauntlet area; pick its lines under Session Overlay",
-		position = 3
+		position = 4
 	)
 	default boolean showSessionOverlay()
 	{
@@ -59,7 +71,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "showSidebar",
 		name = "Show Sidebar Tab",
 		description = "Show the CG Splits tab (last run, stats, session) in the sidebar",
-		position = 4
+		position = 5
 	)
 	default boolean showSidebar()
 	{
@@ -69,7 +81,7 @@ public interface CGSplitsConfig extends Config
 	@ConfigSection(
 		name = "Session Overlay",
 		description = "Which lines the on-screen session box shows",
-		position = 5
+		position = 6
 	)
 	String sessionSection = "session";
 
@@ -77,7 +89,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "sessionShowEph",
 		name = "Enters Per Hour",
 		description = "Show EPH in the session box",
-		position = 6,
+		position = 7,
 		section = sessionSection
 	)
 	default boolean sessionShowEph()
@@ -89,7 +101,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "sessionShowAvg",
 		name = "Average Enter",
 		description = "Show the average enter time in the session box",
-		position = 7,
+		position = 8,
 		section = sessionSection
 	)
 	default boolean sessionShowAvg()
@@ -101,7 +113,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "sessionShowEnters",
 		name = "Hunllef Enters",
 		description = "Show how many times you've entered the Hunllef room this session",
-		position = 8,
+		position = 9,
 		section = sessionSection
 	)
 	default boolean sessionShowEnters()
@@ -113,7 +125,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "sessionShowArmour",
 		name = "T1/No Arm",
 		description = "Show this session's T1 armour and no armour enters, e.g. 5/12",
-		position = 9,
+		position = 10,
 		section = sessionSection
 	)
 	default boolean sessionShowArmour()
@@ -125,7 +137,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "sessionShowResets",
 		name = "Resets",
 		description = "Show how many runs you reset before the Hunllef this session",
-		position = 10,
+		position = 11,
 		section = sessionSection
 	)
 	default boolean sessionShowResets()
@@ -137,7 +149,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "sessionShowTime",
 		name = "Session Time",
 		description = "Show the session time that EPH is based on",
-		position = 11,
+		position = 12,
 		section = sessionSection
 	)
 	default boolean sessionShowTime()
@@ -148,7 +160,7 @@ public interface CGSplitsConfig extends Config
 	@ConfigSection(
 		name = "Set Threshold",
 		description = "What the on-screen timer's colours compare your Preparation, 50% and Finish against",
-		position = 12
+		position = 13
 	)
 	String paceSection = "pace";
 
@@ -156,7 +168,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "paceComparison",
 		name = "Compare Against",
 		description = "Personal: your PB's splits. Custom: the times below. World Record: the current WR",
-		position = 13,
+		position = 14,
 		section = paceSection
 	)
 	default PaceComparison paceComparison()
@@ -168,7 +180,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "customPrep",
 		name = "Custom Preparation",
 		description = "Target preparation time for Custom, e.g. 1:50",
-		position = 14,
+		position = 15,
 		section = paceSection
 	)
 	default String customPrep()
@@ -180,7 +192,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "customHalf",
 		name = "Custom 50%",
 		description = "Target time from the start of the run until the Hunllef is at 50% HP, for Custom, e.g. 3:05",
-		position = 15,
+		position = 16,
 		section = paceSection
 	)
 	default String customHalf()
@@ -193,7 +205,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "aheadColor",
 		name = "Ahead Colour",
 		description = "Colour for a split that beat the target",
-		position = 16,
+		position = 17,
 		section = paceSection
 	)
 	default Color aheadColor()
@@ -205,7 +217,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "behindColor",
 		name = "Behind Colour",
 		description = "Colour for a split slower than the target, and for the live timer once it passes the target",
-		position = 17,
+		position = 18,
 		section = paceSection
 	)
 	default Color behindColor()
@@ -217,7 +229,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "bestColor",
 		name = "Best Colour",
 		description = "Personal only: colour for your best ever time at that split",
-		position = 18,
+		position = 19,
 		section = paceSection
 	)
 	default Color bestColor()
