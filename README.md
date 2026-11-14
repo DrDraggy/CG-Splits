@@ -19,7 +19,7 @@ Splits are milestones, like on paceman.gg. Each milestone is recorded the first 
 | Hunllef | The whole fight, from Enter to the kill. Listed under it, each quarter of the Hunllef's HP on its own: **100-75**, **75-50**, **50-25** and **25-0**, so you can see where your damage dropped off |
 | Finish | Hunllef death, or the completion chat message as a fallback |
 
-Each run is saved as JSON to `~/.runelite/cg-splits/runs/`, completed or not. It records how the run ended (completed, died, left or abandoned) and whether you entered the Hunllef room with **T1 armour** (helm, body and legs, any tier) or **No Armour**. Partial sets (one or two pieces) are still recorded but not shown. A **reset** is a run that ended before reaching the Hunllef room.
+Each run is saved as JSON to `~/.runelite/plugin-data/cg-splits/runs/` (RuneLite moves runs from the older `~/.runelite/cg-splits/` folder there automatically), completed or not. It records how the run ended (completed, died, left or abandoned) and whether you entered the Hunllef room with **T1 armour** (helm, body and legs, any tier) or **No Armour**. Partial sets (one or two pieces) are still recorded but not shown. A **reset** is a run that ended before reaching the Hunllef room.
 
 Entering the Hunllef room without ever holding a corrupted weapon isn't treated as a real enter: the run isn't saved and doesn't count towards EPH or average enter.
 
@@ -29,7 +29,7 @@ Times under a minute are shown without minutes (`6.0`, not `0:06.0`).
 
 ## On-screen boxes
 
-- **Timer:** **Preparation:**, optionally **50%:**, and **Finish:**, all timed from the start of the run and shown only while you're inside the instance. The colours follow **Set Threshold** (below). Turn it off with **Show Timer**. With **Replace Gauntlet Timer** (on by default), turning our timer on switches off the timer overlay from The Gauntlet plugin so only one timer shows; it's switched back on when you turn this or Show Timer off, or disable CG Splits. The Gauntlet plugin itself stays on. **Show 50% HP Split** adds the time from entering the room to the Hunllef reaching half health. **Timer Precision** switches between live ticks (`6.0`, `6.6`, `7.2`) and seconds (`6`, `7`, `8`). Prep counts up until you enter the Hunllef room; Finish appears in the boss room and stops when the Hunllef dies.
+- **Timer:** **Preparation:**, optionally **50%:**, and **Finish:**, all timed from the start of the run and shown only while you're inside the instance. The colours follow **Set Threshold** (below). Turn it off with **Show Timer**. **Show 50% HP Split** adds the time from entering the room to the Hunllef reaching half health. **Timer Precision** switches between live ticks (`6.0`, `6.6`, `7.2`) and seconds (`6`, `7`, `8`). Prep counts up until you enter the Hunllef room; Finish appears in the boss room and stops when the Hunllef dies.
 - **Session:** EPH (shown without decimals, not rounded) and AVG by default. Under the **Session Overlay** settings you can also turn on Hunllef Enters, T1/No Arm (e.g. `5/12`), Resets and Session Time. It shows while you're in the instance or the Prifddinas Gauntlet lobby. Turn it off with **Show Session Overlay**. Hold Alt and drag either box to move it.
 
 The session clock that EPH is based on keeps running between runs, so quick resets through the lobby count as play time. If you stay outside the instance for more than 5 ticks (AFK, banking, logged out) it pauses, and the sidebar shows **(paused)** in red until your next run.

@@ -1,12 +1,9 @@
 package com.cgsplits;
 
 import com.google.gson.Gson;
-import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -15,20 +12,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.client.RuneLite;
+import net.runelite.client.util.Filepath;
 
 /**
- * Stores every run (completed or not) as its own JSON file in ~/.runelite/cg-splits/runs/
- * and derives the PB, best splits and aggregate stats from them.
+ * Stores every run (completed or not) as its own JSON file in the plugin's data folder,
+ * .runelite/plugin-data/cg-splits/runs/, and derives the PB, best splits and aggregate stats
+ * from them. All file access goes through RuneLite's {@link Filepath}.
  */
 @Slf4j
 @Singleton
 public class RunStore
 {
-	private static final File RUNS_DIR = new File(new File(RuneLite.RUNELITE_DIR, "cg-splits"), "runs");
+	/** Where runs are saved; set by {@link #load(Filepath)} when the plugin starts. */
+	private volatile Filepath runsDir;
 
 	private final Gson gson;
 	private final ScheduledExecutorService executor;
@@ -58,15 +59,34 @@ public class RunStore
 		listeners.remove(listener);
 	}
 
-	public synchronized void load()
+	/**
+	 * Loads every saved run from the plugin's data folder.
+	 *
+	 * @param pluginDirectory the folder RuneLite gives this plugin (see {@code Plugin#getPluginDirectory})
+	 */
+	public synchronized void load(Filepath pluginDirectory)
 	{
+		runsDir = pluginDirectory.joinSegment("runs");
+
 		List<Run> loaded = new ArrayList<>();
-		File[] files = RUNS_DIR.listFiles((dir, name) -> name.endsWith(".json"));
-		if (files != null)
+		if (runsDir.isDirectory())
 		{
-			for (File file : files)
+			List<Filepath> files;
+			try (Stream<Filepath> walk = runsDir.walk(1))
 			{
-				try (Reader reader = Files.newBufferedReader(file.toPath(), StandardCharsets.UTF_8))
+				files = walk
+					.filter(f -> f.isFile() && f.getFileName().endsWith(".json"))
+					.collect(Collectors.toList());
+			}
+			catch (IOException e)
+			{
+				log.warn("Couldn't list saved Gauntlet runs in {}", runsDir, e);
+				files = Collections.emptyList();
+			}
+
+			for (Filepath file : files)
+			{
+				try (Reader reader = file.openBufferedReader())
 				{
 					Run run = gson.fromJson(reader, Run.class);
 					// Runs saved before weaponless enters were ignored are skipped here too
@@ -187,11 +207,17 @@ public class RunStore
 
 	private void write(Run run)
 	{
-		File file = new File(RUNS_DIR, run.getStartedAt() + ".json");
+		Filepath dir = runsDir;
+		if (dir == null)
+		{
+			log.warn("Not saving Gauntlet run: data folder not set up");
+			return;
+		}
+		Filepath file = dir.joinSegment(run.getStartedAt() + ".json");
 		try
 		{
-			Files.createDirectories(RUNS_DIR.toPath());
-			try (Writer writer = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8))
+			dir.createDirectories();
+			try (Writer writer = file.openBufferedWriter())
 			{
 				gson.toJson(run, writer);
 			}

@@ -47,7 +47,9 @@ import net.runelite.client.util.Text;
 @PluginDescriptor(
 	name = "CG Splits",
 	description = "LiveSplit-style auto-splits and personal bests for the Corrupted Gauntlet",
-	tags = {"gauntlet", "corrupted", "cg", "hunllef", "splits", "timer", "speedrun", "pb"}
+	tags = {"gauntlet", "corrupted", "cg", "hunllef", "splits", "timer", "speedrun", "pb"},
+	internalName = "cg-splits",
+	legacyDataDirectory = "cg-splits"
 )
 public class CGSplitsPlugin extends Plugin
 {
@@ -67,9 +69,6 @@ public class CGSplitsPlugin extends Plugin
 
 	@Inject
 	private Client client;
-
-	@Inject
-	private ConfigManager configManager;
 
 	@Inject
 	private ItemManager itemManager;
@@ -119,12 +118,14 @@ public class CGSplitsPlugin extends Plugin
 	}
 
 	@Override
-	protected void startUp()
+	protected void startUp() throws Exception
 	{
 		panel = injector.getInstance(CGSplitsPanel.class);
 		storeListener = () -> SwingUtilities.invokeLater(panel::refresh);
 		runStore.addListener(storeListener);
-		runStore.load();
+		// RuneLite gives each plugin its own data folder (.runelite/plugin-data/cg-splits) and
+		// moves our old .runelite/cg-splits folder into it the first time
+		runStore.load(getPluginDirectory());
 
 		navButton = NavigationButton.builder()
 			.tooltip("CG Splits")
@@ -135,7 +136,6 @@ public class CGSplitsPlugin extends Plugin
 		updateSidebar();
 		overlayManager.add(overlay);
 		overlayManager.add(sessionOverlay);
-		syncGauntletTimer(true);
 	}
 
 	@Override
@@ -144,7 +144,6 @@ public class CGSplitsPlugin extends Plugin
 		overlayManager.remove(overlay);
 		overlayManager.remove(sessionOverlay);
 		clientToolbar.removeNavigation(navButton);
-		syncGauntletTimer(false);
 
 		// Keep the run in progress in the stats instead of silently dropping it
 		Run unfinished = tracker.abandon();
@@ -239,51 +238,9 @@ public class CGSplitsPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (!CGSplitsConfig.GROUP.equals(event.getGroup()))
-		{
-			return;
-		}
-		if ("showSidebar".equals(event.getKey()))
+		if (CGSplitsConfig.GROUP.equals(event.getGroup()) && "showSidebar".equals(event.getKey()))
 		{
 			updateSidebar();
-		}
-		else if ("showTimer".equals(event.getKey()) || "hideGauntletTimer".equals(event.getKey()))
-		{
-			syncGauntletTimer(true);
-		}
-	}
-
-	// The Gauntlet plugin's own "timer overlay" setting, and our note that we turned it off
-	private static final String GAUNTLET_GROUP = "thegauntlet";
-	private static final String GAUNTLET_TIMER_KEY = "timerOverlay";
-	private static final String WE_HID_GAUNTLET_TIMER = "hidGauntletTimer";
-
-	/**
-	 * Avoid two timers on screen: while our timer is on, switch off The Gauntlet plugin's timer
-	 * overlay (only that setting, never the plugin). We remember doing it, and switch it back on
-	 * when our timer is turned off, the option is turned off, or CG Splits is disabled.
-	 *
-	 * @param active false when CG Splits is shutting down
-	 */
-	private void syncGauntletTimer(boolean active)
-	{
-		boolean shouldHide = active && config.showTimer() && config.hideGauntletTimer();
-		String theirs = configManager.getConfiguration(GAUNTLET_GROUP, GAUNTLET_TIMER_KEY);
-		boolean weHid = Boolean.parseBoolean(configManager.getConfiguration(CGSplitsConfig.GROUP, WE_HID_GAUNTLET_TIMER));
-
-		if (shouldHide)
-		{
-			// null means The Gauntlet plugin isn't installed: leave it alone
-			if ("true".equals(theirs))
-			{
-				configManager.setConfiguration(GAUNTLET_GROUP, GAUNTLET_TIMER_KEY, false);
-				configManager.setConfiguration(CGSplitsConfig.GROUP, WE_HID_GAUNTLET_TIMER, true);
-			}
-		}
-		else if (weHid)
-		{
-			configManager.setConfiguration(GAUNTLET_GROUP, GAUNTLET_TIMER_KEY, true);
-			configManager.unsetConfiguration(CGSplitsConfig.GROUP, WE_HID_GAUNTLET_TIMER);
 		}
 	}
 
