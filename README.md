@@ -13,13 +13,14 @@ Splits are milestones, like on paceman.gg. Each milestone is recorded the first 
 | 1st Weapon | Any corrupted staff, bow or halberd in your inventory or equipment |
 | Demi Killed | First demi-boss (bear, dragon or dark beast) killed |
 | Perfected Weapon / 2nd Perfected | First and second distinct perfected weapon types |
-| T1 Armour | Full armour set (helm, body and legs) held, any tier |
 | Preparation | Entering the Hunllef room |
-| 50% | The Hunllef first at or below half health, timed from the start of the run |
+| 75% / 50% / 25% | The Hunllef first at or below that much health, timed from the start of the run |
 | Hunllef | The whole fight, from Enter to the kill. Listed under it, each quarter of the Hunllef's HP on its own: **100-75**, **75-50**, **50-25** and **25-0**, so you can see where your damage dropped off |
 | Finish | Hunllef death, or the completion chat message as a fallback |
 
-Each run is saved as JSON to `~/.runelite/plugin-data/cg-splits/runs/` (RuneLite moves runs from the older `~/.runelite/cg-splits/` folder there automatically), completed or not. It records how the run ended (completed, died, left or abandoned) and whether you entered the Hunllef room with **T1 armour** (helm, body and legs, any tier) or **No Armour**. Partial sets (one or two pieces) are still recorded but not shown. A **reset** is a run that ended before reaching the Hunllef room.
+Each run is saved as JSON to `~/.runelite/plugin-data/cg-splits/runs/` (RuneLite moves runs from the older `~/.runelite/cg-splits/` folder there automatically), completed or not. It records how the run ended (completed, died, left or abandoned), whether you entered the Hunllef room with **T1 armour** (helm, body and legs, any tier) or **No Armour**, and which perfected weapons you'd made by then. Partial sets (one or two pieces) count as a **Burger Enter**.
+
+Overall play time (session time added up across every session, including ones you reset) is saved to `~/.runelite/plugin-data/cg-splits/playtime.json`. A **reset** is a run that ended before reaching the Hunllef room.
 
 Entering the Hunllef room without ever holding a corrupted weapon isn't treated as a real enter: the run isn't saved and doesn't count towards EPH or average enter.
 
@@ -37,16 +38,18 @@ The session clock that EPH is based on keeps running between runs, so quick rese
 ## Sidebar
 
 The hourglass icon in the sidebar opens the tab below. You can hide it with the **Show Sidebar Tab** option.
-- **Session:**
-  - Hunllef Enters, Enters Per Hour (one decimal) and Average Enter
+- **Stats**, with a **Session** / **Overall** toggle:
+  - Runs, Hunllef Enters, Enters Per Hour (one decimal) and Average Enter
   - T1/No Arm: how many enters had T1 armour vs no armour, e.g. `5/12`
-  - Resets and Session Time, with **(paused)** in red while the clock is paused
-  - a **Reset Session** button
-- **Last Run:** result, final time, prep time, armour on entry or the furthest split, and every split with its gap to your PB.
-- **Splits** and **Other Splits:** like paceman.gg's stats page, these count incomplete runs too. For each split: how many runs reached it (hover for %), with the average and best time.
-  - **Splits** holds what the Timer shows: Preparation, 50% and Finish, all from the start of the run.
-  - **Other Splits** holds everything else: 1st Weapon, Demi Killed, the perfected weapons, T1 Armour, the Hunllef fight with its four quarters, and enters by armour (T1 Armour Enter, No Armour Enter; hover the count for the kill rate).
-- **Recent Runs:** the last 20 runs that reached the Hunllef room, each showing its enter time and armour (`2:18.6  T1` or `1:19.2  No Arm`) on the left and its finish time (or Died at Hunllef / Reset at Hunllef) on the right. Resets are left out of this list but still count in the split stats. Click a run to show its splits above.
+  - Resets, and Kills with the share of enters that ended in one, e.g. `6 (67%)`
+  - **Session:** Session Time, with **(paused)** in red while the clock is paused, and a **Reset Session** button
+  - **Overall:** every saved run, and Play Time added up across all sessions. Overall Enters Per Hour only counts enters made since play time started being tracked, since older runs have no play time.
+- **Splits**, with **Main** / **Prep** / **Hunllef** tabs. Like paceman.gg's stats page, these count incomplete runs too. For each split: how many runs reached it (hover for %), with the average and best time.
+  - **Main** holds what the Timer shows: Preparation, 50% and Finish, all from the start of the run.
+  - **Prep** holds 1st Weapon, Demi Killed and the perfected weapons, then enters by armour (T1 Armour Enter, No Armour Enter; hover the count for the kill rate).
+  - **Hunllef** holds the whole fight and its four quarters.
+- **Last Run:** result, final time, date, armour on entry and perfected weapons (e.g. `Perf Staff + Bow`), next to Prep, 75%, 50%, 25% and End coloured against your PB (hover for the gap). Splits the run didn't reach show `-`, so the box stays the same size whichever run is selected.
+- **Recent Runs:** the last 10 runs that reached the Hunllef room, each showing its enter time and armour (`2:18.6  T1` or `1:19.2  No Arm`) on the left, its finish time (or Died at Hunllef / Reset at Hunllef) on the right, and when it happened underneath (`Today 14:32`). Resets are left out of this list but still count in the split stats. Click a run to show it above.
 
 ## Development
 
@@ -78,6 +81,8 @@ The **Set Threshold** settings section picks what the Timer's colours compare ag
 | **World Record** | The current world record. |
 
 A reached split turns green if it beat the target and red if it didn't. While a split is still counting, it turns red as soon as it passes the target, so you can see you're behind before you get there.
+
+Turn on **Show Gap** (off by default) to also show how far ahead or behind the target each split is, e.g. `4:41.4 (-3.0)`. While a split is still counting, the gap appears once you're behind.
 
 ## Top 3 and World Record
 

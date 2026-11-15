@@ -39,6 +39,7 @@ public class SessionTracker
 		long elapsedMs;
 		int runs;
 		int resets;
+		int kills;
 		int enters;
 		int averageEnterTicks;
 		double entersPerHour;
@@ -60,12 +61,43 @@ public class SessionTracker
 	private int ticksOutside;
 	private int runs;
 	private int resets;
+	private int kills;
 	private int enters;
 	private long totalEnterTicks;
 	private final Map<Armour, int[]> armourEnters = new EnumMap<>(Armour.class); // {count, totalTicks}
 
+	// Overall play time and enters across every session: not cleared by reset(), saved between restarts
+	private long overallMs;
+	private int overallEnters;
+	private long overallSince;
+
+	/** Restores the overall totals saved last time the plugin ran. */
+	public synchronized void setOverall(PlayTime saved)
+	{
+		// The plugin object outlives being turned off and on, so what's in memory may be newer
+		// than the file (which is written in the background)
+		if (saved.getMs() < overallMs)
+		{
+			return;
+		}
+		overallMs = Math.max(0, saved.getMs());
+		overallEnters = Math.max(0, saved.getEnters());
+		overallSince = saved.getSince();
+	}
+
+	/** Overall play time and enters, including the stretch the clock is running right now. */
+	public synchronized PlayTime overall(long now)
+	{
+		long running = clockRunning ? Math.max(0, now - clockResumedAt) : 0;
+		return new PlayTime(overallMs + running, overallEnters, overallSince);
+	}
+
 	public synchronized void onRunStarted(long now)
 	{
+		if (overallSince == 0)
+		{
+			overallSince = now;
+		}
 		active = true;
 		runs++;
 		ticksOutside = 0;
@@ -111,6 +143,7 @@ public class SessionTracker
 			return;
 		}
 		enters++;
+		overallEnters++;
 		totalEnterTicks += enterTicks;
 		if (armour != null)
 		{
@@ -120,17 +153,30 @@ public class SessionTracker
 		}
 	}
 
-	/** @param reset the run ended (died or left) before reaching the Hunllef room */
-	public synchronized void onRunEnded(boolean reset)
+	/**
+	 * @param reset  the run ended (died or left) before reaching the Hunllef room
+	 * @param killed the run ended with the Hunllef dead
+	 */
+	public synchronized void onRunEnded(boolean reset, boolean killed)
 	{
-		if (active && reset)
+		if (!active)
+		{
+			return;
+		}
+		if (reset)
 		{
 			resets++;
 		}
+		if (killed)
+		{
+			kills++;
+		}
 	}
 
-	public synchronized void reset()
+	/** Starts a fresh session; time played so far still counts towards the overall total. */
+	public synchronized void reset(long now)
 	{
+		pauseClock(now);
 		active = false;
 		accumulatedMs = 0;
 		clockRunning = false;
@@ -138,6 +184,7 @@ public class SessionTracker
 		ticksOutside = 0;
 		runs = 0;
 		resets = 0;
+		kills = 0;
 		enters = 0;
 		totalEnterTicks = 0;
 		armourEnters.clear();
@@ -147,7 +194,7 @@ public class SessionTracker
 	{
 		if (!active)
 		{
-			return new Snapshot(false, false, 0, 0, 0, 0, 0, 0, Collections.emptyMap());
+			return new Snapshot(false, false, 0, 0, 0, 0, 0, 0, 0, Collections.emptyMap());
 		}
 		long elapsed = accumulatedMs + (clockRunning ? Math.max(0, now - clockResumedAt) : 0);
 		double hours = elapsed / 3_600_000.0;
@@ -156,7 +203,7 @@ public class SessionTracker
 		Map<Armour, EnterStats> byArmour = new EnumMap<>(Armour.class);
 		armourEnters.forEach((armour, s) -> byArmour.put(armour, new EnterStats(s[0], average(s[1], s[0]))));
 
-		return new Snapshot(true, !clockRunning, elapsed, runs, resets, enters, average(totalEnterTicks, enters), eph,
+		return new Snapshot(true, !clockRunning, elapsed, runs, resets, kills, enters, average(totalEnterTicks, enters), eph,
 			Collections.unmodifiableMap(byArmour));
 	}
 
@@ -173,7 +220,9 @@ public class SessionTracker
 	{
 		if (clockRunning)
 		{
-			accumulatedMs += Math.max(0, now - clockResumedAt);
+			long segment = Math.max(0, now - clockResumedAt);
+			accumulatedMs += segment;
+			overallMs += segment;
 			clockRunning = false;
 		}
 	}

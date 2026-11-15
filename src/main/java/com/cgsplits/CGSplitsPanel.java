@@ -1,23 +1,28 @@
 package com.cgsplits;
 
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import javax.inject.Inject;
+import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -35,7 +40,8 @@ import net.runelite.client.ui.PluginPanel;
  */
 class CGSplitsPanel extends PluginPanel
 {
-	private static final int RECENT_RUNS = 20;
+	private static final int RECENT_RUNS = 10;
+	private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
 	private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("MMM d, HH:mm").withZone(ZoneId.systemDefault());
 	private static final Color MUTED = ColorScheme.LIGHT_GRAY_COLOR.darker();
 	private static final Color FAILED = new Color(0xFF8C42);
@@ -45,16 +51,28 @@ class CGSplitsPanel extends PluginPanel
 	private final SessionTracker session;
 	private final JPanel content = new JPanel(new DynamicGridLayout(0, 1, 0, 4));
 
-	// Session card is built once and updated in place every second
-	private final JPanel sessionCard = card(new DynamicGridLayout(0, 1, 0, 2));
-	private final JLabel sessionEnters;
-	private final JLabel sessionEph;
-	private final JLabel sessionAvgEnter;
-	private final JLabel sessionResets;
-	private final JLabel sessionArmour;
-	private final JLabel sessionBurger;
-	private final JLabel sessionTime;
+	// Stats card: Session and Overall share one card with a toggle; built once, updated every second
+	private final JPanel statsCard = card(new DynamicGridLayout(0, 1, 0, 2));
+	private final JLabel sessionTab;
+	private final JLabel overallTab;
+	private final JLabel statRuns;
+	private final JLabel statEnters;
+	private final JLabel statEph;
+	private final JLabel statAvgEnter;
+	private final JLabel statArmour;
+	private final JLabel statBurger;
+	private final JLabel statResets;
+	private final JLabel statKills;
+	private final JLabel statTimeName;
+	private final JLabel statTime;
+	private final JPanel resetHolder = new JPanel(new CardLayout());
 	private final Timer sessionTimer;
+	/** Which view of the stats card is showing. */
+	private boolean showOverall;
+	/** Runs changed while the tab was hidden, so it needs rebuilding when it's next opened. */
+	private boolean stale;
+	/** Which tab of the splits card is showing; kept when the panel is rebuilt. */
+	private String splitsTab = "Main";
 
 	/** Run shown in the detail section; follows the newest run unless the user picked another. */
 	private Run selected;
@@ -72,29 +90,54 @@ class CGSplitsPanel extends PluginPanel
 		content.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		add(content, BorderLayout.NORTH);
 
-		sessionEnters = valueRow(sessionCard, "Hunllef Enters");
-		sessionEph = valueRow(sessionCard, "Enters Per Hour");
-		sessionAvgEnter = valueRow(sessionCard, "Average Enter");
-		sessionArmour = valueRow(sessionCard, "T1/No Arm");
-		sessionBurger = valueRow(sessionCard, Armour.BURGER.getDisplayName());
-		sessionResets = valueRow(sessionCard, "Resets");
-		sessionTime = valueRow(sessionCard, "Session Time");
-		((JPanel) sessionTime.getParent()).setToolTipText("Counts between runs too, but pauses after "
-			+ SessionTracker.PAUSE_AFTER_TICKS_OUTSIDE + " ticks outside the instance");
+		JPanel tabs = new JPanel(new GridLayout(1, 2));
+		tabs.setOpaque(false);
+		sessionTab = tab("Session", () -> showStats(false));
+		overallTab = tab("Overall", () -> showStats(true));
+		tabs.add(sessionTab);
+		tabs.add(overallTab);
+		statsCard.add(tabs);
+
+		statRuns = statRow("Runs")[1];
+		statEnters = statRow("Hunllef Enters")[1];
+		statEph = statRow("Enters Per Hour")[1];
+		statAvgEnter = statRow("Average Enter")[1];
+		statArmour = statRow("T1/No Arm")[1];
+		statBurger = statRow(Armour.BURGER.getDisplayName())[1];
+		statResets = statRow("Resets")[1];
+		statKills = statRow("Kills")[1];
+		JLabel[] time = statRow("Session Time");
+		statTimeName = time[0];
+		statTime = time[1];
+		((JPanel) statKills.getParent()).setToolTipText("Hunllef kills, and the share of enters that ended in one");
+
+		// Reset only applies to the session; on Overall its space is kept so the card doesn't jump
 		JButton reset = new JButton("Reset Session");
 		reset.setFont(FontManager.getRunescapeSmallFont());
 		reset.setFocusable(false);
 		reset.addActionListener(e ->
 		{
-			session.reset();
-			updateSession();
+			session.reset(System.currentTimeMillis());
+			updateStats();
 		});
-		sessionCard.add(reset);
+		JPanel noReset = new JPanel();
+		noReset.setOpaque(false);
+		resetHolder.setOpaque(false);
+		resetHolder.add(reset, "session");
+		resetHolder.add(noReset, "overall");
+		statsCard.add(resetHolder);
 
-		sessionTimer = new Timer(1000, e -> updateSession());
+		// Only tick while the tab is actually on screen; onActivate catches it up when opened
+		sessionTimer = new Timer(1000, e ->
+		{
+			if (isShowing())
+			{
+				updateStats();
+			}
+		});
 		sessionTimer.start();
 
-		updateSession();
+		updateStats();
 		refresh();
 	}
 
@@ -103,43 +146,178 @@ class CGSplitsPanel extends PluginPanel
 		sessionTimer.stop();
 	}
 
+	/**
+	 * Runs were loaded or saved. Rebuilding the panel is the most work the plugin does, and a run
+	 * is saved right as you leave the instance, so it's put off until the tab is opened.
+	 */
+	void runsChanged()
+	{
+		if (isShowing())
+		{
+			refresh();
+		}
+		else
+		{
+			stale = true;
+		}
+	}
+
+	@Override
+	public void onActivate()
+	{
+		if (stale)
+		{
+			refresh();
+		}
+		else
+		{
+			updateStats();
+		}
+	}
+
 	private static String hex(Color color)
 	{
 		return String.format("#%02X%02X%02X", color.getRed(), color.getGreen(), color.getBlue());
 	}
 
-	private void updateSession()
+	private void showStats(boolean overall)
+	{
+		showOverall = overall;
+		updateStats();
+	}
+
+	/** A clickable tab label for the top of a card; style it with {@link #styleTab}. */
+	private static JLabel tab(String text, Runnable onClick)
+	{
+		JLabel tab = new JLabel(text, SwingConstants.CENTER);
+		tab.setFont(FontManager.getRunescapeSmallFont());
+		tab.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		tab.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				onClick.run();
+			}
+		});
+		return tab;
+	}
+
+	private static void styleTab(JLabel tab, boolean active)
+	{
+		tab.setForeground(active ? Color.WHITE : MUTED);
+		tab.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(0, 0, 2, 0, active ? ColorScheme.BRAND_ORANGE : ColorScheme.MEDIUM_GRAY_COLOR),
+			new EmptyBorder(2, 0, 3, 0)));
+	}
+
+	/** Adds a "name ... value" row to the stats card; returns {name, value}. */
+	private JLabel[] statRow(String name)
+	{
+		JPanel row = row(name, MUTED, "", Color.WHITE, FontManager.getRunescapeSmallFont());
+		statsCard.add(row);
+		BorderLayout layout = (BorderLayout) row.getLayout();
+		return new JLabel[]{
+			(JLabel) layout.getLayoutComponent(BorderLayout.WEST),
+			(JLabel) layout.getLayoutComponent(BorderLayout.EAST)};
+	}
+
+	private void updateStats()
+	{
+		styleTab(sessionTab, !showOverall);
+		styleTab(overallTab, showOverall);
+		((CardLayout) resetHolder.getLayout()).show(resetHolder, showOverall ? "overall" : "session");
+		if (showOverall)
+		{
+			showOverallStats();
+		}
+		else
+		{
+			showSessionStats();
+		}
+	}
+
+	private void showSessionStats()
 	{
 		SessionTracker.Snapshot s = session.snapshot(System.currentTimeMillis());
-		sessionEnters.setText(String.valueOf(s.getEnters()));
-		sessionEph.setText(s.getEnters() > 0 ? TimeFormat.ephPrecise(s.getEntersPerHour()) : "-");
-		sessionAvgEnter.setText(s.getEnters() > 0 ? TimeFormat.ticks(s.getAverageEnterTicks()) : "-");
-		sessionResets.setText(String.valueOf(s.getResets()));
-		sessionArmour.setText(s.entersWith(Armour.FULL) + "/" + s.entersWith(Armour.NONE));
+		statRuns.setText(String.valueOf(s.getRuns()));
+		statEnters.setText(String.valueOf(s.getEnters()));
+		statEph.setText(s.getEnters() > 0 ? TimeFormat.ephPrecise(s.getEntersPerHour()) : "-");
+		((JPanel) statEph.getParent()).setToolTipText("Enters per hour of session time");
+		statAvgEnter.setText(s.getEnters() > 0 ? TimeFormat.ticks(s.getAverageEnterTicks()) : "-");
+		statArmour.setText(s.entersWith(Armour.FULL) + "/" + s.entersWith(Armour.NONE));
+		statResets.setText(String.valueOf(s.getResets()));
+		statKills.setText(kills(s.getKills(), s.getEnters()));
 
 		// The burger row stays hidden until someone actually does one
 		SessionTracker.EnterStats burger = s.getByArmour().get(Armour.BURGER);
-		sessionBurger.setText(burger == null ? "-" : TimeFormat.ticks(burger.getAverageTicks()) + " (" + burger.getCount() + ")");
-		sessionBurger.getParent().setVisible(burger != null);
+		statBurger.setText(burger == null ? "-" : TimeFormat.ticks(burger.getAverageTicks()) + " (" + burger.getCount() + ")");
+		statBurger.getParent().setVisible(burger != null);
 
+		statTimeName.setText("Session Time");
+		((JPanel) statTime.getParent()).setToolTipText("Counts between runs too, but pauses after "
+			+ SessionTracker.PAUSE_AFTER_TICKS_OUTSIDE + " ticks outside the instance");
 		if (!s.isActive())
 		{
-			sessionTime.setText("Not started");
+			statTime.setText("Not started");
 		}
 		else if (s.isPaused())
 		{
-			sessionTime.setText("<html>" + TimeFormat.duration(s.getElapsedMs())
+			statTime.setText("<html>" + TimeFormat.duration(s.getElapsedMs())
 				+ " <font color='" + hex(config.behindColor()) + "'>(paused)</font></html>");
 		}
 		else
 		{
-			sessionTime.setText(TimeFormat.duration(s.getElapsedMs()));
+			statTime.setText(TimeFormat.duration(s.getElapsedMs()));
 		}
+	}
+
+	/** Every saved run, plus play time counted across all sessions since it was first tracked. */
+	private void showOverallStats()
+	{
+		RunStats stats = runStore.getStats();
+		RunStats.MilestoneStats enters = stats.getMilestones().get(Milestone.BOSS_ROOM);
+		int enterCount = enters == null ? 0 : enters.getCount();
+
+		statRuns.setText(String.valueOf(stats.getRuns()));
+		statEnters.setText(String.valueOf(enterCount));
+		statAvgEnter.setText(enterCount > 0 ? TimeFormat.ticks(enters.getAverageTicks()) : "-");
+		statArmour.setText(armourEnters(stats, Armour.FULL) + "/" + armourEnters(stats, Armour.NONE));
+		statResets.setText(String.valueOf(stats.getResets()));
+		statKills.setText(kills(stats.getCompletions(), enterCount));
+
+		RunStats.MilestoneStats burger = stats.getEnters().get(Armour.BURGER);
+		statBurger.setText(burger == null ? "-" : TimeFormat.ticks(burger.getAverageTicks()) + " (" + burger.getCount() + ")");
+		statBurger.getParent().setVisible(burger != null);
+
+		// EPH only counts enters made while play time was being tracked; older runs have no play time
+		PlayTime playTime = session.overall(System.currentTimeMillis());
+		double hours = playTime.getMs() / 3_600_000.0;
+		statEph.setText(playTime.getEnters() > 0 && hours > 0 ? TimeFormat.ephPrecise(playTime.getEnters() / hours) : "-");
+		String since = playTime.getSince() == 0 ? "" : " since " + DATE.format(Instant.ofEpochMilli(playTime.getSince()));
+		((JPanel) statEph.getParent()).setToolTipText("Enters per hour of play time" + since);
+
+		statTimeName.setText("Play Time");
+		statTime.setText(playTime.getSince() == 0 ? "-" : TimeFormat.duration(playTime.getMs()));
+		((JPanel) statTime.getParent()).setToolTipText("All session time" + since + ", including sessions you reset");
+	}
+
+	/** "6 (67%)": kills, and the share of enters that ended in one. */
+	private static String kills(int kills, int enters)
+	{
+		return enters > 0 ? kills + " (" + Math.round(100.0 * kills / enters) + "%)" : String.valueOf(kills);
+	}
+
+	private static int armourEnters(RunStats stats, Armour armour)
+	{
+		RunStats.MilestoneStats e = stats.getEnters().get(armour);
+		return e == null ? 0 : e.getCount();
 	}
 
 	/** Rebuild the panel from the store. Must be called on the Swing EDT. */
 	void refresh()
 	{
+		stale = false;
 		List<Run> runs = runStore.getRuns();
 		if (runs.isEmpty())
 		{
@@ -161,15 +339,13 @@ class CGSplitsPanel extends PluginPanel
 		content.add(header("Top 3"));
 		content.add(topThreeCard());
 
-		// Order: Session, Splits, Enters by Armour, Last Run, Recent Runs
-		content.add(header("Session"));
-		content.add(sessionCard);
+		// Order: Stats (Session/Overall), Splits (Main/Prep/Hunllef), Last Run, Recent Runs
+		content.add(header("Stats"));
+		content.add(statsCard);
+		updateStats();
 
 		content.add(header("Splits"));
-		content.add(mainSplitsTable(runStore.getStats()));
-
-		content.add(header("Other Splits"));
-		content.add(otherSplitsTable(runStore.getStats()));
+		content.add(splitsCard(runStore.getStats()));
 
 		content.add(header(runs.isEmpty() || selected == runs.get(0) ? "Last Run" : "Selected Run"));
 		if (selected == null)
@@ -262,7 +438,11 @@ class CGSplitsPanel extends PluginPanel
 		return card;
 	}
 
-	/** Stacked so it fits half the panel width: result, time, date, armour. */
+	/**
+	 * Stacked so it fits half the panel width: result, time, date, armour and perfected weapons.
+	 * Always five lines, blank where there's nothing to show, so the card is the same height
+	 * whichever run is selected.
+	 */
 	private JPanel runSummary(Run run)
 	{
 		JPanel summary = new JPanel(new DynamicGridLayout(0, 1, 0, 2));
@@ -270,18 +450,35 @@ class CGSplitsPanel extends PluginPanel
 		summary.add(label(resultText(run), resultColor(run), FontManager.getRunescapeBoldFont()));
 		summary.add(label(finalTime(run), Color.WHITE, FontManager.getRunescapeBoldFont()));
 		summary.add(label(DATE.format(Instant.ofEpochMilli(run.getStartedAt())), MUTED, FontManager.getRunescapeSmallFont()));
-		if (run.getArmourAtEnter() != null)
-		{
-			summary.add(label(run.getArmourAtEnter().getDisplayName(), Color.WHITE, FontManager.getRunescapeSmallFont()));
-		}
-		// Keep the summary pinned to the top when the splits list is taller
+		Armour armour = run.getArmourAtEnter();
+		summary.add(label(armour != null ? armour.getDisplayName() : " ", Color.WHITE, FontManager.getRunescapeSmallFont()));
+		summary.add(label(weaponsText(run), Color.WHITE, FontManager.getRunescapeSmallFont()));
 		JPanel top = new JPanel(new BorderLayout());
 		top.setOpaque(false);
 		top.add(summary, BorderLayout.NORTH);
 		return top;
 	}
 
-	/** Split name and time; the time is coloured against PB/best, with the exact gap on hover. */
+	/** "Perf Staff + Bow", "No Perfected", or blank for runs that didn't enter or predate this. */
+	private static String weaponsText(Run run)
+	{
+		List<String> weapons = run.getPerfectedAtEnter();
+		if (weapons == null || !run.hasSplit(Milestone.BOSS_ROOM))
+		{
+			return " ";
+		}
+		return weapons.isEmpty() ? "No Perfected" : "Perf " + String.join(" + ", weapons);
+	}
+
+	/** The splits shown for a single run, always all of them, with "-" for ones it didn't reach. */
+	private static final Milestone[] RUN_SPLITS = {
+		Milestone.BOSS_ROOM, Milestone.HUNLLEF_75, Milestone.HUNLLEF_50, Milestone.HUNLLEF_25, Milestone.HUNLLEF};
+	private static final String[] RUN_SPLIT_NAMES = {"Prep", "75%", "50%", "25%", "End"};
+
+	/**
+	 * Prep, the Hunllef's 75/50/25% HP and End, all timed from the start of the run. The time is
+	 * coloured against PB/best, with the exact gap on hover.
+	 */
 	private JPanel splitsTable(Run run)
 	{
 		JPanel table = new JPanel(new GridBagLayout());
@@ -289,28 +486,27 @@ class CGSplitsPanel extends PluginPanel
 		JPanel top = new JPanel(new BorderLayout());
 		top.setOpaque(false);
 		top.add(table, BorderLayout.NORTH);
-		if (run.getSplits().isEmpty())
-		{
-			addRow(table, 0, cell("No Splits", MUTED, SwingConstants.LEFT));
-			return top;
-		}
 
 		// Compare against your PB, or your previous PB if this run is the PB
 		Run pb = runStore.getPersonalBestExcluding(run);
 		Map<Milestone, Integer> best = runStore.getBestSplits();
 
-		int row = 0;
-		for (Milestone milestone : displayOrder(run))
+		for (int i = 0; i < RUN_SPLITS.length; i++)
 		{
-			int tick = run.splitTime(milestone);
+			Milestone milestone = RUN_SPLITS[i];
+			JLabel name = cell(RUN_SPLIT_NAMES[i], Color.WHITE, SwingConstants.LEFT);
+			Integer tick = run.splitTime(milestone);
+			if (tick == null)
+			{
+				addRow(table, i, name, cell("-", MUTED, SwingConstants.RIGHT));
+				continue;
+			}
+
 			Integer pbTick = pb != null ? pb.splitTime(milestone) : null;
 			Integer bestTick = best.get(milestone);
-
-			String delta = "";
 			Color color = Color.WHITE;
 			if (pbTick != null)
 			{
-				delta = TimeFormat.delta(tick - pbTick);
 				color = tick <= pbTick ? config.aheadColor() : config.behindColor();
 			}
 			if (bestTick != null && tick <= bestTick)
@@ -318,48 +514,14 @@ class CGSplitsPanel extends PluginPanel
 				color = config.bestColor();
 			}
 
-			JLabel value = cell(formatSplit(milestone, tick), color, SwingConstants.RIGHT);
-			if (!delta.isEmpty())
+			JLabel value = cell(TimeFormat.ticks(tick), color, SwingConstants.RIGHT);
+			if (pbTick != null)
 			{
-				value.setToolTipText(delta + " vs PB");
+				value.setToolTipText(TimeFormat.delta(tick - pbTick) + " vs PB");
 			}
-			addRow(table, row++, splitName(milestone, true), value);
+			addRow(table, i, name, value);
 		}
 		return top;
-	}
-
-	/**
-	 * Prep splits in the order this run reached them, then Enter, the Hunllef fight with its
-	 * quarters underneath, and Finish.
-	 */
-	private static List<Milestone> displayOrder(Run run)
-	{
-		List<Milestone> prep = new ArrayList<>();
-		List<Milestone> fight = new ArrayList<>();
-		for (Milestone m : Milestone.values())
-		{
-			if (!m.isShown() || run.splitTime(m) == null || m == Milestone.HUNLLEF)
-			{
-				continue;
-			}
-			if (m.isRelative())
-			{
-				fight.add(m);
-			}
-			else
-			{
-				prep.add(m);
-			}
-		}
-		prep.sort((a, b) -> Integer.compare(run.getSplits().get(a), run.getSplits().get(b)));
-
-		List<Milestone> order = new ArrayList<>(prep);
-		order.addAll(fight);
-		if (run.splitTime(Milestone.HUNLLEF) != null)
-		{
-			order.add(Milestone.HUNLLEF);
-		}
-		return order;
 	}
 
 	/** Segments are shown as "+40.8" to read as time added after the split before them. */
@@ -369,9 +531,9 @@ class CGSplitsPanel extends PluginPanel
 	}
 
 	/** Split name, indented for the HP quarters under the Hunllef fight. */
-	private static JLabel splitName(Milestone milestone, boolean compact)
+	private static JLabel splitName(Milestone milestone)
 	{
-		JLabel name = cell(compact ? milestone.getShortName() : milestone.getDisplayName(), milestone.isSubSplit() ? MUTED : Color.WHITE, SwingConstants.LEFT);
+		JLabel name = cell(milestone.getDisplayName(), milestone.isSubSplit() ? MUTED : Color.WHITE, SwingConstants.LEFT);
 		if (milestone.isSubSplit())
 		{
 			name.setBorder(new EmptyBorder(0, 10, 0, 0));
@@ -392,25 +554,71 @@ class CGSplitsPanel extends PluginPanel
 		return label;
 	}
 
-	/** The Timer's splits: Preparation, 50% and Finish, all from the start of the run. */
-	private JPanel mainSplitsTable(RunStats stats)
+	private static final String[] SPLIT_TABS = {"Main", "Prep", "Hunllef"};
+
+	/**
+	 * Every split's count, average and best in one card, a tab per group: Main (the Timer's
+	 * splits), Prep (milestones and enters by armour) and Hunllef (the fight and its quarters).
+	 * A CardLayout sizes the card to the tallest tab, so switching doesn't move what's below.
+	 */
+	private JPanel splitsCard(RunStats stats)
 	{
-		JPanel table = card(new GridBagLayout());
-		int row = 0;
-		addRow(table, row++, headerCells("Split"));
-		row = addMilestoneRows(table, row, Milestone.MAIN, stats);
+		JPanel card = card(new BorderLayout(0, 6));
+		CardLayout cards = new CardLayout();
+		JPanel pages = new JPanel(cards);
+		pages.setOpaque(false);
+		pages.add(topAligned(splitsTable(Milestone.MAIN, stats)), SPLIT_TABS[0]);
+		JPanel prep = splitsTable(Milestone.PREP, stats);
+		addEnterRows(prep, Milestone.PREP.size() + 1, stats);
+		pages.add(topAligned(prep), SPLIT_TABS[1]);
+		pages.add(topAligned(splitsTable(Milestone.FIGHT, stats)), SPLIT_TABS[2]);
+
+		JPanel tabs = new JPanel(new GridLayout(1, SPLIT_TABS.length));
+		tabs.setOpaque(false);
+		JLabel[] labels = new JLabel[SPLIT_TABS.length];
+		for (int i = 0; i < SPLIT_TABS.length; i++)
+		{
+			String name = SPLIT_TABS[i];
+			labels[i] = tab(name, () ->
+			{
+				splitsTab = name;
+				cards.show(pages, name);
+				for (JLabel l : labels)
+				{
+					styleTab(l, l.getText().equals(name));
+				}
+			});
+			styleTab(labels[i], name.equals(splitsTab));
+			tabs.add(labels[i]);
+		}
+		cards.show(pages, splitsTab);
+
+		card.add(tabs, BorderLayout.NORTH);
+		card.add(pages, BorderLayout.CENTER);
+		return card;
+	}
+
+	private JPanel splitsTable(List<Milestone> milestones, RunStats stats)
+	{
+		JPanel table = new JPanel(new GridBagLayout());
+		table.setOpaque(false);
+		addRow(table, 0, headerCells("Split"));
+		addMilestoneRows(table, 1, milestones, stats);
 		return table;
 	}
 
-	/** Everything else: prep milestones, the Hunllef fight and its quarters, then enters by armour. */
-	private JPanel otherSplitsTable(RunStats stats)
+	private static JPanel topAligned(JPanel panel)
 	{
-		JPanel table = card(new GridBagLayout());
-		int row = 0;
-		addRow(table, row++, headerCells("Split"));
-		row = addMilestoneRows(table, row, Milestone.OTHER, stats);
+		JPanel top = new JPanel(new BorderLayout());
+		top.setOpaque(false);
+		top.add(panel, BorderLayout.NORTH);
+		return top;
+	}
 
-		// Enters by armour: how many, average and best enter time, and kill rate on hover
+	/** Enters by armour: how many, average and best enter time, and kill rate on hover. */
+	private void addEnterRows(JPanel table, int row, RunStats stats)
+	{
+
 		for (Armour armour : Armour.values())
 		{
 			// Burger enters only get a row once you've done one; old partial runs load as burgers
@@ -433,7 +641,6 @@ class CGSplitsPanel extends PluginPanel
 				cell(e != null ? TimeFormat.ticks(e.getAverageTicks()) : "-", Color.WHITE, SwingConstants.RIGHT),
 				cell(e != null ? TimeFormat.ticks(e.getBestTicks()) : "-", config.bestColor(), SwingConstants.RIGHT));
 		}
-		return table;
 	}
 
 	/** paceman-style rows: how many runs reached each split, and the average/best time. */
@@ -445,7 +652,7 @@ class CGSplitsPanel extends PluginPanel
 			JLabel count = cell(m != null ? String.valueOf(m.getCount()) : "0", Color.WHITE, SwingConstants.RIGHT);
 			count.setToolTipText(stats.percentReached(milestone) + "% of runs reached this split");
 			addRow(table, row++,
-				splitName(milestone, false),
+				splitName(milestone),
 				count,
 				cell(m != null ? formatSplit(milestone, m.getAverageTicks()) : "-", Color.WHITE, SwingConstants.RIGHT),
 				cell(m != null ? formatSplit(milestone, m.getBestTicks()) : "-", config.bestColor(), SwingConstants.RIGHT));
@@ -488,9 +695,13 @@ class CGSplitsPanel extends PluginPanel
 		// e.g. "2:18.6  T1" on the left, the finish time (or Died / Left) on the right
 		String enter = TimeFormat.ticks(run.getSplits().get(Milestone.BOSS_ROOM));
 		Armour armour = run.getArmourAtEnter();
-		JPanel row = row(armour != null ? enter + "  " + armour.getTag() : enter, Color.WHITE,
+		JPanel line = row(armour != null ? enter + "  " + armour.getTag() : enter, Color.WHITE,
 			run.isCompleted() ? finalTime(run) : resultText(run), resultColor(run),
 			FontManager.getRunescapeSmallFont());
+		// When it happened underneath, e.g. "Today 14:32", so the order is easy to follow
+		JPanel row = new JPanel(new DynamicGridLayout(0, 1, 0, 1));
+		row.add(line);
+		row.add(label(when(run.getStartedAt()), MUTED, FontManager.getRunescapeSmallFont()));
 		row.setBackground(background);
 		row.setBorder(new EmptyBorder(4, 6, 4, 6));
 		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -595,12 +806,20 @@ class CGSplitsPanel extends PluginPanel
 		return row;
 	}
 
-	/** Adds a "name ... value" row to the card and returns the value label for later updates. */
-	private static JLabel valueRow(JPanel card, String name)
+	/** "Today 14:32", "Yesterday 09:05", or "Nov 12, 21:40" for older runs. */
+	private static String when(long epochMs)
 	{
-		JPanel row = row(name, MUTED, "", Color.WHITE, FontManager.getRunescapeSmallFont());
-		card.add(row);
-		return (JLabel) ((BorderLayout) row.getLayout()).getLayoutComponent(BorderLayout.EAST);
+		ZonedDateTime time = Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault());
+		LocalDate today = LocalDate.now(ZoneId.systemDefault());
+		if (time.toLocalDate().equals(today))
+		{
+			return "Today " + CLOCK.format(time);
+		}
+		if (time.toLocalDate().equals(today.minusDays(1)))
+		{
+			return "Yesterday " + CLOCK.format(time);
+		}
+		return DATE.format(time);
 	}
 
 	private static JLabel cell(String text, Color color, int alignment)

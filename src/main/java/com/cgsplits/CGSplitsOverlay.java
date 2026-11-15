@@ -97,9 +97,16 @@ class CGSplitsOverlay extends OverlayPanel
 			color = config.behindColor();
 		}
 
+		String time = config.timerPrecision().format(reached != null ? reached : live);
+		// Optional gap to the target: once the split is reached, or live once it's already behind
+		if (config.showGap() && target != null && (reached != null || live > target))
+		{
+			time += " (" + TimeFormat.delta((reached != null ? reached : live) - target) + ")";
+		}
+
 		panelComponent.getChildren().add(LineComponent.builder()
 			.left(label)
-			.right(config.timerPrecision().format(reached != null ? reached : live))
+			.right(time)
 			.rightColor(color)
 			.build());
 	}

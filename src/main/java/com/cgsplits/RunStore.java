@@ -28,8 +28,12 @@ import net.runelite.client.util.Filepath;
 @Singleton
 public class RunStore
 {
+	private static final String PLAY_TIME_FILE = "playtime.json";
+
 	/** Where runs are saved; set by {@link #load(Filepath)} when the plugin starts. */
 	private volatile Filepath runsDir;
+	/** Overall play time, next to the runs folder; set by {@link #load(Filepath)}. */
+	private volatile Filepath playTimeFile;
 
 	private final Gson gson;
 	private final ScheduledExecutorService executor;
@@ -39,6 +43,7 @@ public class RunStore
 	private volatile List<Run> runs = new ArrayList<>();
 	private volatile Run personalBest;
 	private volatile Map<Milestone, Integer> bestSplits = new EnumMap<>(Milestone.class);
+	private volatile Map<Milestone, Integer> bestTicks = new EnumMap<>(Milestone.class);
 	private volatile RunStats stats = RunStats.of(new ArrayList<>());
 
 	@Inject
@@ -66,6 +71,7 @@ public class RunStore
 	 */
 	public synchronized void load(Filepath pluginDirectory)
 	{
+		playTimeFile = pluginDirectory.joinSegment(PLAY_TIME_FILE);
 		runsDir = pluginDirectory.joinSegment("runs");
 
 		List<Run> loaded = new ArrayList<>();
@@ -106,6 +112,52 @@ public class RunStore
 		log.debug("Loaded {} Gauntlet runs", loaded.size());
 	}
 
+	/** Overall play time saved last time, or zeroes if there's none yet. Call after {@link #load(Filepath)}. */
+	public PlayTime loadPlayTime()
+	{
+		Filepath file = playTimeFile;
+		if (file != null && file.isFile())
+		{
+			try (Reader reader = file.openBufferedReader())
+			{
+				PlayTime saved = gson.fromJson(reader, PlayTime.class);
+				if (saved != null)
+				{
+					return saved;
+				}
+			}
+			catch (Exception e)
+			{
+				log.warn("Couldn't read overall play time from {}", file, e);
+			}
+		}
+		return new PlayTime();
+	}
+
+	public void savePlayTime(PlayTime playTime)
+	{
+		Filepath file = playTimeFile;
+		if (file == null)
+		{
+			return;
+		}
+		executor.execute(() ->
+		{
+			try
+			{
+				file.getParent().createDirectories();
+				try (Writer writer = file.openBufferedWriter())
+				{
+					gson.toJson(playTime, writer);
+				}
+			}
+			catch (IOException e)
+			{
+				log.warn("Failed to save overall play time to {}", file, e);
+			}
+		});
+	}
+
 	public synchronized void save(Run run)
 	{
 		executor.execute(() -> write(run));
@@ -140,19 +192,13 @@ public class RunStore
 		return best;
 	}
 
-	/** Best (lowest) tick a recorded split was ever reached at, counted from the run start. */
+	/**
+	 * Best (lowest) tick a recorded split was ever reached at, counted from the run start.
+	 * Worked out once when runs change, since the timer overlay asks for it every frame.
+	 */
 	public Integer bestTick(Milestone milestone)
 	{
-		Integer best = null;
-		for (Run run : runs)
-		{
-			Integer tick = run.getSplits().get(milestone);
-			if (tick != null && (best == null || tick < best))
-			{
-				best = tick;
-			}
-		}
-		return best;
+		return bestTicks.get(milestone);
 	}
 
 	/** Fastest completed corrupted run, or null. */
@@ -178,8 +224,16 @@ public class RunStore
 
 		Run pb = null;
 		Map<Milestone, Integer> best = new EnumMap<>(Milestone.class);
+		Map<Milestone, Integer> ticks = new EnumMap<>(Milestone.class);
 		for (Run run : newRuns)
 		{
+			run.getSplits().forEach((milestone, tick) ->
+			{
+				if (milestone != null && tick != null)
+				{
+					ticks.merge(milestone, tick, Math::min);
+				}
+			});
 			if (run.isCompleted() && (pb == null || run.getTicks() < pb.getTicks()))
 			{
 				pb = run;
@@ -197,6 +251,7 @@ public class RunStore
 		runs = Collections.unmodifiableList(newRuns);
 		personalBest = pb;
 		bestSplits = best;
+		bestTicks = ticks;
 		stats = RunStats.of(newRuns);
 
 		for (Runnable listener : listeners)

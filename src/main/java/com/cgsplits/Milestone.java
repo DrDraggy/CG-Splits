@@ -24,7 +24,6 @@ public enum Milestone
 	DEMIS("Demi Killed", true, false),
 	FIRST_PERFECTED("Perfected Weapon", true, false),
 	SECOND_PERFECTED("2nd Perfected", true, false),
-	FULL_ARMOUR("T1 Armour", true, false),
 	/** Entered the Hunllef room. */
 	BOSS_ROOM("Preparation", true, false),
 
@@ -49,36 +48,25 @@ public enum Milestone
 	// RunStore folds them into DEMIS.
 	BEAR("Bear", false, false),
 	DRAGON("Dragon", false, false),
-	DARK_BEAST("Dark Beast", false, false);
+	DARK_BEAST("Dark Beast", false, false),
+	/** Older versions split on completing T1 armour; the T1 Enter row covers it now. Dropped on load. */
+	FULL_ARMOUR("T1 Armour", false, false);
 
 	private final String displayName;
 	private final boolean shown;
 	/** Listed indented under the Hunllef fight. */
 	private final boolean subSplit;
 
-	/** Shorter name for the narrow Last Run card. */
-	public String getShortName()
-	{
-		switch (this)
-		{
-			case FIRST_PERFECTED:
-				return "Perf Wep";
-			case SECOND_PERFECTED:
-				return "2nd Perf Wep";
-			case BOSS_ROOM:
-				return "Prep";
-			default:
-				return displayName;
-		}
-	}
-
 	/** The splits the in-raid Timer shows, listed under "Splits" in the sidebar. */
 	public static final List<Milestone> MAIN = Collections.unmodifiableList(Arrays.asList(
 		BOSS_ROOM, HUNLLEF_50, HUNLLEF));
 
-	/** Everything else, listed under "Other Splits". */
-	public static final List<Milestone> OTHER = Collections.unmodifiableList(Arrays.asList(
-		FIRST_WEAPON, DEMIS, FIRST_PERFECTED, SECOND_PERFECTED, FULL_ARMOUR,
+	/** Prep milestones, listed under the "Prep" tab of the sidebar's splits card. */
+	public static final List<Milestone> PREP = Collections.unmodifiableList(Arrays.asList(
+		FIRST_WEAPON, DEMIS, FIRST_PERFECTED, SECOND_PERFECTED));
+
+	/** The Hunllef fight and its HP quarters, listed under the "Hunllef" tab. */
+	public static final List<Milestone> FIGHT = Collections.unmodifiableList(Arrays.asList(
 		HUNLLEF_FIGHT, QUARTER_1, QUARTER_2, QUARTER_3, QUARTER_4));
 
 	/** Recorded HP thresholds: stored from the run start, moved with Enter when it's corrected. */

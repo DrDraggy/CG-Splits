@@ -74,9 +74,10 @@ public class RunTrackerTest
 		assertEquals(Integer.valueOf(150), run.getSplits().get(Milestone.FIRST_WEAPON));
 		assertEquals(Integer.valueOf(200), run.getSplits().get(Milestone.FIRST_PERFECTED));
 		assertEquals(Integer.valueOf(200), run.getSplits().get(Milestone.SECOND_PERFECTED));
-		assertEquals(Integer.valueOf(200), run.getSplits().get(Milestone.FULL_ARMOUR));
+		assertFalse(run.hasSplit(Milestone.FULL_ARMOUR));
 		assertEquals(Integer.valueOf(300), run.getSplits().get(Milestone.BOSS_ROOM));
 		assertEquals(Armour.FULL, run.getArmourAtEnter());
+		assertEquals(Arrays.asList("Staff", "Bow"), run.getPerfectedAtEnter());
 		assertFalse(run.isReset());
 		assertEquals(Integer.valueOf(402), run.getSplits().get(Milestone.HUNLLEF));
 		assertEquals("4:01.20", run.getOfficialDuration());

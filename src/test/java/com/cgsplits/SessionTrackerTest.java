@@ -20,7 +20,7 @@ public class SessionTrackerTest
 		session.onEnter(500, Armour.FULL);
 
 		session.onRunStarted(t0 + 8 * MIN);
-		session.onRunEnded(true); // reset in prep
+		session.onRunEnded(true, false); // reset in prep
 
 		session.onRunStarted(t0 + 10 * MIN);
 		session.onEnter(600, Armour.NONE);
@@ -127,12 +127,55 @@ public class SessionTrackerTest
 		SessionTracker session = new SessionTracker();
 		session.onRunStarted(0);
 		session.onEnter(500, Armour.FULL);
-		session.onRunEnded(true);
-		session.reset();
+		session.onRunEnded(true, false);
+		session.onRunEnded(false, true);
+		assertEquals(1, session.snapshot(MIN).getKills());
+		session.reset(MIN);
 		assertFalse(session.snapshot(2 * MIN).isActive());
 		session.onEnter(500, Armour.FULL); // enter without a run start is ignored
 		assertEquals(0, session.snapshot(3 * MIN).getEnters());
 		assertEquals(0, session.snapshot(3 * MIN).getResets());
+		assertEquals(0, session.snapshot(3 * MIN).getKills());
+	}
+
+	@Test
+	public void overallKeepsCountingThroughSessionResets()
+	{
+		SessionTracker session = new SessionTracker();
+		session.setOverall(new PlayTime(60 * MIN, 5, 123L)); // saved last time
+
+		session.onRunStarted(0);
+		session.onEnter(500, Armour.FULL);
+		session.reset(10 * MIN);
+
+		session.onRunStarted(20 * MIN);
+		session.onEnter(450, Armour.NONE);
+
+		// 60 saved + 10 before the reset + 5 running now; AFK time between doesn't count
+		PlayTime overall = session.overall(25 * MIN);
+		assertEquals(75 * MIN, overall.getMs());
+		assertEquals(7, overall.getEnters());
+		assertEquals(123L, overall.getSince());
+	}
+
+	@Test
+	public void overallStartsAtFirstRun()
+	{
+		SessionTracker session = new SessionTracker();
+		assertEquals(0, session.overall(MIN).getSince());
+		session.onRunStarted(5 * MIN);
+		assertEquals(5 * MIN, session.overall(6 * MIN).getSince());
+		assertEquals(MIN, session.overall(6 * MIN).getMs());
+	}
+
+	@Test
+	public void olderSavedPlayTimeDoesNotOverwriteMemory()
+	{
+		SessionTracker session = new SessionTracker();
+		session.onRunStarted(0);
+		session.pause(30 * MIN);
+		session.setOverall(new PlayTime(10 * MIN, 0, 1L));
+		assertEquals(30 * MIN, session.overall(40 * MIN).getMs());
 	}
 
 	@Test

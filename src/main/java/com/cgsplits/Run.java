@@ -1,6 +1,7 @@
 package com.cgsplits;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.Data;
 
@@ -34,6 +35,11 @@ public class Run
 	private EndReason endReason;
 	/** Armour held when entering the Hunllef room; null if the run never got there. */
 	private Armour armourAtEnter;
+	/**
+	 * Perfected weapons made before entering the Hunllef room, e.g. ["Staff", "Bow"]; empty if
+	 * none, null for runs saved before this was recorded.
+	 */
+	private List<String> perfectedAtEnter;
 	private int ticks;
 	private Map<Milestone, Integer> splits = new LinkedHashMap<>();
 
@@ -77,6 +83,8 @@ public class Run
 	public void migrateLegacySplits()
 	{
 		splits.remove(null);
+		// The T1 armour split was dropped; the T1 Enter row covers it
+		splits.remove(Milestone.FULL_ARMOUR);
 		Integer bear = splits.remove(Milestone.BEAR);
 		Integer dragon = splits.remove(Milestone.DRAGON);
 		Integer darkBeast = splits.remove(Milestone.DARK_BEAST);

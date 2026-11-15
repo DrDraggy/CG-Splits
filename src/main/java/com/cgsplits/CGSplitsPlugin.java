@@ -121,11 +121,12 @@ public class CGSplitsPlugin extends Plugin
 	protected void startUp() throws Exception
 	{
 		panel = injector.getInstance(CGSplitsPanel.class);
-		storeListener = () -> SwingUtilities.invokeLater(panel::refresh);
+		storeListener = () -> SwingUtilities.invokeLater(panel::runsChanged);
 		runStore.addListener(storeListener);
 		// RuneLite gives each plugin its own data folder (.runelite/plugin-data/cg-splits) and
 		// moves our old .runelite/cg-splits folder into it the first time
 		runStore.load(getPluginDirectory());
+		session.setOverall(runStore.loadPlayTime());
 
 		navButton = NavigationButton.builder()
 			.tooltip("CG Splits")
@@ -151,6 +152,8 @@ public class CGSplitsPlugin extends Plugin
 		{
 			onRunEnded(unfinished);
 		}
+		session.pause(System.currentTimeMillis());
+		savePlayTime();
 
 		runStore.removeListener(storeListener);
 		panel.shutDown();
@@ -210,8 +213,10 @@ public class CGSplitsPlugin extends Plugin
 		{
 			if (countThisRun)
 			{
-				session.onRunEnded(ended.isReset() && ended.isCorrupted());
+				boolean counted = ended.isCorrupted() && !ended.isWeaponlessEnter();
+				session.onRunEnded(counted && ended.isReset(), counted && ended.isCompleted());
 				onRunEnded(ended);
+				savePlayTime();
 			}
 			else
 			{
@@ -231,8 +236,15 @@ public class CGSplitsPlugin extends Plugin
 		if (event.getGameState() == GameState.LOGIN_SCREEN || event.getGameState() == GameState.HOPPING)
 		{
 			session.pause(System.currentTimeMillis());
+			savePlayTime();
 			inGauntletArea = false;
 		}
+	}
+
+	/** Saves the overall play time, so it carries over to the next time the client starts. */
+	private void savePlayTime()
+	{
+		runStore.savePlayTime(session.overall(System.currentTimeMillis()));
 	}
 
 	@Subscribe

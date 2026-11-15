@@ -188,12 +188,23 @@ public interface CGSplitsConfig extends Config
 		return "";
 	}
 
+	@ConfigItem(
+		keyName = "showGap",
+		name = "Show Gap",
+		description = "Show how far ahead or behind the target each timer split is, e.g. 4:41.4 (-3.0)",
+		position = 16,
+		section = paceSection
+	)
+	default boolean showGap()
+	{
+		return false;
+	}
 
 	@ConfigItem(
 		keyName = "aheadColor",
 		name = "Ahead Colour",
 		description = "Colour for a split that beat the target",
-		position = 16,
+		position = 17,
 		section = paceSection
 	)
 	default Color aheadColor()
@@ -205,7 +216,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "behindColor",
 		name = "Behind Colour",
 		description = "Colour for a split slower than the target, and for the live timer once it passes the target",
-		position = 17,
+		position = 18,
 		section = paceSection
 	)
 	default Color behindColor()
@@ -217,7 +228,7 @@ public interface CGSplitsConfig extends Config
 		keyName = "bestColor",
 		name = "Best Colour",
 		description = "Personal only: colour for your best ever time at that split",
-		position = 18,
+		position = 19,
 		section = paceSection
 	)
 	default Color bestColor()

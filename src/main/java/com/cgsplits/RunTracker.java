@@ -1,7 +1,9 @@
 package com.cgsplits;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -146,6 +148,7 @@ public class RunTracker
 				if (state == State.PREP && inBossRoom)
 				{
 					current.setArmourAtEnter(Armour.classify(armourSlots.size(), bestWeaponTier));
+					current.setPerfectedAtEnter(perfectedWeapons());
 					split(Milestone.BOSS_ROOM);
 					state = State.BOSS;
 				}
@@ -223,10 +226,6 @@ public class RunTracker
 		if (perfectedTypes.size() >= 2)
 		{
 			split(Milestone.SECOND_PERFECTED);
-		}
-		if (armourSlots.size() >= 3)
-		{
-			split(Milestone.FULL_ARMOUR);
 		}
 	}
 
@@ -379,6 +378,20 @@ public class RunTracker
 		{
 			current.setMode(mode);
 		}
+	}
+
+	/** Perfected weapons made so far, in a fixed order: "Staff", "Bow", "Halberd". */
+	private List<String> perfectedWeapons()
+	{
+		List<String> weapons = new ArrayList<>();
+		for (String type : new String[]{"staff", "bow", "halberd"})
+		{
+			if (perfectedTypes.contains(type))
+			{
+				weapons.add(Character.toUpperCase(type.charAt(0)) + type.substring(1));
+			}
+		}
+		return weapons;
 	}
 
 	private static int weaponTier(String tier)
