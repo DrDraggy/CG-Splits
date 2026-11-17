@@ -28,6 +28,14 @@ public class RunTracker
 	static final int SAVE_DELAY_TICKS = 10;
 
 	/**
+	 * Ticks from the Hunllef's HP hitting 0 until the game's own timer stops and the kill counts.
+	 * Measured on real kills: the official "Challenge duration" was 6 ticks after the death on 5
+	 * of 6 runs (5 on the other). The timer keeps running for these ticks, and normally the
+	 * completion message arrives within them and sets the exact time.
+	 */
+	static final int KILL_COUNT_DELAY_TICKS = 6;
+
+	/**
 	 * The game's own Gauntlet timer starts 4 ticks after the "entered Gauntlet" varbit flips.
 	 * Measured against the official "Preparation time" message on real runs: starting on the
 	 * flip put us 4 ticks ahead, and starting on arrival (1 tick later) put us 3 ticks ahead.
@@ -156,7 +164,24 @@ public class RunTracker
 
 			case FINISHED:
 				ticksSinceFinish++;
-				if (!inGauntlet || ticksSinceFinish >= SAVE_DELAY_TICKS)
+				if (!inGauntlet)
+				{
+					return end(true);
+				}
+				// The game's timer runs on through the death animation: keep counting until the
+				// completion message gives the official time, or estimate it if none comes
+				if (!current.hasSplit(Milestone.HUNLLEF))
+				{
+					if (ticksSinceFinish <= KILL_COUNT_DELAY_TICKS)
+					{
+						current.setTicks(current.getTicks() + 1);
+					}
+					if (ticksSinceFinish >= KILL_COUNT_DELAY_TICKS)
+					{
+						split(Milestone.HUNLLEF);
+					}
+				}
+				if (ticksSinceFinish >= SAVE_DELAY_TICKS)
 				{
 					return end(true);
 				}
@@ -278,8 +303,8 @@ public class RunTracker
 	}
 
 	/**
-	 * The Hunllef's health bar, as a fraction from 0 to 1. Records the 75/50/25% splits the
-	 * first tick its health is at or below each threshold.
+	 * The Hunllef's HP, as a fraction from 0 to 1. Records the 75/50/25% splits the first tick
+	 * its HP is below each threshold, so exactly 50% doesn't count yet but 49.9% does.
 	 */
 	public void onBossHealth(double fraction)
 	{
@@ -287,18 +312,49 @@ public class RunTracker
 		{
 			return;
 		}
-		if (fraction <= 0.75)
+		if (fraction < 0.75)
 		{
 			split(Milestone.HUNLLEF_75);
 		}
-		if (fraction <= 0.50)
+		if (fraction < 0.50)
 		{
 			split(Milestone.HUNLLEF_50);
 		}
-		if (fraction <= 0.25)
+		if (fraction < 0.25)
 		{
 			split(Milestone.HUNLLEF_25);
 		}
+	}
+
+	/**
+	 * The Hunllef's HP as a fraction from 0 to 1, or -1 while it isn't known yet.
+	 * <p>
+	 * The health bar over its head is coarse: the game sends {@code ratio = 1 + (scale - 1) * hp
+	 * / maxHp} (0 once dead), so one bar step spans several percent and a bar at exactly half can
+	 * still be 51.7% HP. The boss HP HUD has the exact HP, so that is used whenever it matches the
+	 * bar. Otherwise (HUD off, or a stale value from another boss) this returns the highest HP the
+	 * bar allows, so a threshold is only passed once the Hunllef is certainly below it.
+	 */
+	static double bossHealthFraction(int ratio, int scale, int hudHp, int hudMaxHp)
+	{
+		if (ratio < 0 || scale <= 0)
+		{
+			return -1;
+		}
+		if (ratio == 0)
+		{
+			return 0;
+		}
+		if (scale == 1)
+		{
+			return 1; // the bar only says it's alive
+		}
+		if (hudHp > 0 && hudMaxHp > 0 && 1 + (scale - 1) * hudHp / hudMaxHp == ratio)
+		{
+			return (double) hudHp / hudMaxHp;
+		}
+		// HP on this bar step is below ratio / (scale - 1), never equal to it
+		return Math.min(1, Math.nextDown((double) ratio / (scale - 1)));
 	}
 
 	public void onLocalPlayerDeath()
@@ -343,9 +399,12 @@ public class RunTracker
 		state = State.PREP;
 	}
 
+	/**
+	 * The Hunllef died. The Finish split isn't set yet: the game's clock stops a few ticks later
+	 * (see {@link #KILL_COUNT_DELAY_TICKS}), so the FINISHED state keeps the timer running.
+	 */
 	private void finish()
 	{
-		split(Milestone.HUNLLEF);
 		current.setCompleted(true);
 		current.setEndReason(Run.EndReason.COMPLETED);
 		ticksSinceFinish = 0;
@@ -355,6 +414,11 @@ public class RunTracker
 	private Run end(boolean completed)
 	{
 		Run run = current;
+		if (completed)
+		{
+			// Left before the estimate or the official time came in
+			split(Milestone.HUNLLEF);
+		}
 		run.setCompleted(completed);
 		if (run.getEndReason() == null)
 		{

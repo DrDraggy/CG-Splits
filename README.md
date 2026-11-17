@@ -14,9 +14,9 @@ Splits are milestones, like on paceman.gg. Each milestone is recorded the first 
 | Demi Killed | First demi-boss (bear, dragon or dark beast) killed |
 | Perfected Weapon / 2nd Perfected | First and second distinct perfected weapon types |
 | Preparation | Entering the Hunllef room |
-| 75% / 50% / 25% | The Hunllef first at or below that much health, timed from the start of the run |
+| 75% / 50% / 25% | The Hunllef first below that much health (49.9% counts for 50%, 50.0% doesn't), timed from the start of the run. Uses the exact HP from the boss health bar at the top of the screen when it's there |
 | Hunllef | The whole fight, from Enter to the kill. Listed under it, each quarter of the Hunllef's HP on its own: **100-75**, **75-50**, **50-25** and **25-0**, so you can see where your damage dropped off |
-| Finish | Hunllef death, or the completion chat message as a fallback |
+| Finish | When the kill counts: the game's clock runs a few ticks past the Hunllef's HP hitting 0, so the timer keeps going through the death animation and then locks to the official "Challenge duration" |
 
 Each run is saved as JSON to `~/.runelite/plugin-data/cg-splits/runs/` (RuneLite moves runs from the older `~/.runelite/cg-splits/` folder there automatically), completed or not. It records how the run ended (completed, died, left or abandoned), whether you entered the Hunllef room with **T1 armour** (helm, body and legs, any tier) or **No Armour**, and which perfected weapons you'd made by then. Partial sets (one or two pieces) count as a **Burger Enter**.
 
@@ -49,7 +49,7 @@ The hourglass icon in the sidebar opens the tab below. You can hide it with the 
   - **Prep** holds 1st Weapon, Demi Killed and the perfected weapons, then enters by armour (T1 Armour Enter, No Armour Enter; hover the count for the kill rate).
   - **Hunllef** holds the whole fight and its four quarters.
 - **Last Run:** result, final time, date, armour on entry and perfected weapons (e.g. `Perf Staff + Bow`), next to Prep, 75%, 50%, 25% and End coloured against your PB (hover for the gap). Splits the run didn't reach show `-`, so the box stays the same size whichever run is selected.
-- **Recent Runs:** the last 10 runs that reached the Hunllef room, each showing its enter time and armour (`2:18.6  T1` or `1:19.2  No Arm`) on the left, its finish time (or Died at Hunllef / Reset at Hunllef) on the right, and when it happened underneath (`Today 14:32`). Resets are left out of this list but still count in the split stats. Click a run to show it above.
+- **Recent Runs:** the last 10 runs that reached the Hunllef room, each showing its enter time and armour (`2:18.6  T1` or `1:19.2  No Arm`) on the left, its finish time (or Died at Hunllef / Reset at Hunllef) on the right, and when it happened underneath (`Today 14:32`). Resets are left out of this list but still count in the split stats. Click a run to show it above, or right-click it and choose **Delete Run** to remove it for good (e.g. a test kill), from your PB, splits, averages and session stats.
 
 ## Development
 

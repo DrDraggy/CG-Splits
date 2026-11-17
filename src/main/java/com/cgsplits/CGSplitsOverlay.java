@@ -60,7 +60,8 @@ class CGSplitsOverlay extends OverlayPanel
 			addSplit("50%:", Milestone.HUNLLEF_50, half, run.getTicks());
 		}
 
-		// Finish: appears once in the boss room, freezes when the Hunllef dies
+		// Finish: appears once in the boss room, freezes when the kill counts (the game's own
+		// time, a few ticks after the Hunllef's HP hits 0)
 		if (prep != null)
 		{
 			addSplit("Finish:", Milestone.HUNLLEF, run.getSplits().get(Milestone.HUNLLEF), run.getTicks());

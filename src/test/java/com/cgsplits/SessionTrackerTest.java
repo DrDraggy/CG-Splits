@@ -43,6 +43,56 @@ public class SessionTrackerTest
 		assertNull(s.getByArmour().get(Armour.PARTIAL));
 	}
 
+	@Test
+	public void deletedRunTakenBackOut()
+	{
+		SessionTracker session = new SessionTracker();
+		long t0 = 1_000_000L;
+
+		session.onRunStarted(t0);
+		session.onEnter(500, Armour.FULL);
+		session.onRunEnded(false, true); // a real kill
+
+		session.onRunStarted(t0 + 10 * MIN);
+		session.onEnter(300, Armour.FULL);
+		session.onRunEnded(false, true); // a test kill
+
+		session.onRunStarted(t0 + 20 * MIN);
+		session.onRunEnded(true, false); // a reset
+
+		Run test = new Run();
+		test.setStartedAt(t0 + 10 * MIN);
+		test.getSplits().put(Milestone.BOSS_ROOM, 300);
+		session.removeRun(test);
+
+		SessionTracker.Snapshot s = session.snapshot(t0 + 30 * MIN);
+		assertEquals(2, s.getRuns());
+		assertEquals(1, s.getEnters());
+		assertEquals(500, s.getAverageEnterTicks());
+		assertEquals(1, s.getKills());
+		assertEquals(1, s.getResets());
+		assertEquals(1, s.getByArmour().get(Armour.FULL).getCount());
+		assertEquals(500, s.getByArmour().get(Armour.FULL).getAverageTicks());
+		assertEquals(1, session.overall(t0 + 30 * MIN).getEnters());
+
+		// A run from before play time was tracked was never in the overall enters
+		Run ancient = new Run();
+		ancient.setStartedAt(t0 - 60 * MIN);
+		ancient.getSplits().put(Milestone.BOSS_ROOM, 400);
+		session.removeRun(ancient);
+		assertEquals(1, session.snapshot(t0 + 30 * MIN).getEnters());
+		assertEquals(1, session.overall(t0 + 30 * MIN).getEnters());
+
+		// After a session reset, deleting an earlier run only takes it out of the overall enters
+		session.reset(t0 + 30 * MIN);
+		Run earlier = new Run();
+		earlier.setStartedAt(t0);
+		earlier.getSplits().put(Milestone.BOSS_ROOM, 500);
+		session.removeRun(earlier);
+		assertEquals(0, session.overall(t0 + 30 * MIN).getEnters());
+		assertFalse(session.snapshot(t0 + 30 * MIN).isActive());
+	}
+
 	private static final long TICK = 600L;
 
 	@Test

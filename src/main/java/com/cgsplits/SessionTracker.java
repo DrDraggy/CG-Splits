@@ -2,6 +2,7 @@ package com.cgsplits;
 
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Map;
 import lombok.Value;
 
@@ -66,6 +67,20 @@ public class SessionTracker
 	private long totalEnterTicks;
 	private final Map<Armour, int[]> armourEnters = new EnumMap<>(Armour.class); // {count, totalTicks}
 
+	/** What a run added to this session's totals, so a deleted run can be taken back out. */
+	private static class Counted
+	{
+		boolean entered;
+		int enterTicks;
+		Armour armour;
+		boolean reset;
+		boolean killed;
+	}
+
+	/** This session's runs by start time ({@link Run#getStartedAt()}). */
+	private final Map<Long, Counted> counted = new HashMap<>();
+	private Counted currentRun;
+
 	// Overall play time and enters across every session: not cleared by reset(), saved between restarts
 	private long overallMs;
 	private int overallEnters;
@@ -92,6 +107,7 @@ public class SessionTracker
 		return new PlayTime(overallMs + running, overallEnters, overallSince);
 	}
 
+	/** @param now when the run started, the same time it's saved with as {@link Run#getStartedAt()} */
 	public synchronized void onRunStarted(long now)
 	{
 		if (overallSince == 0)
@@ -100,6 +116,8 @@ public class SessionTracker
 		}
 		active = true;
 		runs++;
+		currentRun = new Counted();
+		counted.put(now, currentRun);
 		ticksOutside = 0;
 		resumeClock(now);
 	}
@@ -151,6 +169,12 @@ public class SessionTracker
 			stats[0]++;
 			stats[1] += enterTicks;
 		}
+		if (currentRun != null)
+		{
+			currentRun.entered = true;
+			currentRun.enterTicks = enterTicks;
+			currentRun.armour = armour;
+		}
 	}
 
 	/**
@@ -171,6 +195,60 @@ public class SessionTracker
 		{
 			kills++;
 		}
+		if (currentRun != null)
+		{
+			currentRun.reset = reset;
+			currentRun.killed = killed;
+			currentRun = null;
+		}
+	}
+
+	/**
+	 * A saved run was deleted: take it back out of the session (if it was played this session)
+	 * and out of the overall enters used for overall EPH. The time played still counts.
+	 */
+	public synchronized void removeRun(Run run)
+	{
+		Counted c = counted.remove(run.getStartedAt());
+		if (c == currentRun)
+		{
+			currentRun = null;
+		}
+		if (c != null && active)
+		{
+			runs = Math.max(0, runs - 1);
+			if (c.reset)
+			{
+				resets = Math.max(0, resets - 1);
+			}
+			if (c.killed)
+			{
+				kills = Math.max(0, kills - 1);
+			}
+			if (c.entered)
+			{
+				enters = Math.max(0, enters - 1);
+				totalEnterTicks = Math.max(0, totalEnterTicks - c.enterTicks);
+				int[] stats = c.armour == null ? null : armourEnters.get(c.armour);
+				if (stats != null)
+				{
+					stats[0]--;
+					stats[1] -= c.enterTicks;
+					if (stats[0] <= 0)
+					{
+						armourEnters.remove(c.armour);
+					}
+				}
+			}
+		}
+
+		// Overall enters count every enter since play time was first tracked, across sessions
+		boolean entered = c != null ? c.entered : run.hasSplit(Milestone.BOSS_ROOM);
+		boolean tracked = c != null || (overallSince != 0 && run.getStartedAt() >= overallSince);
+		if (entered && tracked)
+		{
+			overallEnters = Math.max(0, overallEnters - 1);
+		}
 	}
 
 	/** Starts a fresh session; time played so far still counts towards the overall total. */
@@ -188,6 +266,8 @@ public class SessionTracker
 		enters = 0;
 		totalEnterTicks = 0;
 		armourEnters.clear();
+		counted.clear();
+		currentRun = null;
 	}
 
 	public synchronized Snapshot snapshot(long now)

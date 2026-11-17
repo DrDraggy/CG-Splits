@@ -32,6 +32,7 @@ import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -181,6 +182,14 @@ public class CGSplitsPlugin extends Plugin
 		{
 			readHunllefHealth();
 		}
+		else if (before == RunTracker.State.FINISHED)
+		{
+			// The ticks between the kill and leaving, to check the timer against the game's
+			Run run = after == RunTracker.State.FINISHED ? tracker.getCurrent() : ended;
+			log.debug("CG after kill: state={} timer={} finish={} inGauntlet={} instance={}",
+				after, run == null ? null : run.getTicks(), run == null ? null : run.getSplits().get(Milestone.HUNLLEF),
+				inGauntlet, client.getTopLevelWorldView().isInstance());
+		}
 
 		if (before == RunTracker.State.IDLE && after == RunTracker.State.PREP)
 		{
@@ -316,6 +325,22 @@ public class CGSplitsPlugin extends Plugin
 			prep.find() ? prep.group(1) : null);
 	}
 
+	/**
+	 * Deletes a saved run for good (e.g. a test kill), and takes it back out of the session and
+	 * overall totals so it doesn't skew the averages.
+	 */
+	void deleteRun(Run run)
+	{
+		// Only once: a double-click on Delete mustn't take the run out of the totals twice
+		if (!runStore.delete(run))
+		{
+			return;
+		}
+		log.debug("Deleted Gauntlet run from {}: ticks={} splits={}", run.getStartedAt(), run.getTicks(), run.getSplits());
+		session.removeRun(run);
+		savePlayTime();
+	}
+
 	private void onRunEnded(Run run)
 	{
 		if (!run.isCorrupted())
@@ -387,8 +412,9 @@ public class CGSplitsPlugin extends Plugin
 	}
 
 	/**
-	 * Feeds the Hunllef's health bar to the tracker. The bar is only known once the Hunllef
-	 * has been hit (ratio -1 before that), which is fine for the 75/50/25% thresholds.
+	 * Feeds the Hunllef's HP to the tracker: exact from the boss HP HUD when it matches the
+	 * health bar, else the bar's upper bound. Only known once the Hunllef has been hit (ratio -1
+	 * before that), which is fine for the 75/50/25% thresholds.
 	 */
 	private void readHunllefHealth()
 	{
@@ -399,11 +425,14 @@ public class CGSplitsPlugin extends Plugin
 			{
 				continue;
 			}
-			int ratio = npc.getHealthRatio();
-			int scale = npc.getHealthScale();
-			if (ratio >= 0 && scale > 0)
+			double fraction = RunTracker.bossHealthFraction(
+				npc.getHealthRatio(),
+				npc.getHealthScale(),
+				client.getVarbitValue(VarbitID.HPBAR_HUD_HP),
+				client.getVarbitValue(VarbitID.HPBAR_HUD_BASEHP));
+			if (fraction >= 0)
 			{
-				tracker.onBossHealth((double) ratio / scale);
+				tracker.onBossHealth(fraction);
 			}
 			return;
 		}

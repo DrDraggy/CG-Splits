@@ -179,6 +179,70 @@ public class RunTrackerTest
 	}
 
 	@Test
+	public void timerRunsUntilTheKillCounts()
+	{
+		tick(true, false);
+		ticks(99);
+		tick(true, true);
+		ticks(100); // 200 ticks in
+		tracker.onNpcDeath("Corrupted Hunllef");
+		Run run = tracker.getCurrent();
+		assertFalse(run.hasSplit(Milestone.HUNLLEF)); // HP is 0, but the game's clock still runs
+
+		// It keeps counting through the death animation, still on screen
+		for (int i = 0; i < 4; i++)
+		{
+			assertNull(tick(true, true));
+		}
+		assertEquals(204, run.getTicks());
+		assertFalse(run.hasSplit(Milestone.HUNLLEF));
+		assertEquals(run, tracker.getCurrent());
+
+		// The completion message sets the exact time and freezes it
+		tick(true, true);
+		tracker.onOfficialTimes("2:03.60", null); // 206 ticks
+		assertEquals(Integer.valueOf(206), run.getSplits().get(Milestone.HUNLLEF));
+		assertEquals(Integer.valueOf(-1), run.getTimerDriftTicks());
+		tick(true, true);
+		tick(true, true);
+		assertEquals(206, run.getTicks());
+		assertEquals(Integer.valueOf(206), run.getSplits().get(Milestone.HUNLLEF));
+
+		Run saved = tick(false, false);
+		assertEquals(206, saved.getTicks());
+		assertTrue(saved.isCompleted());
+	}
+
+	@Test
+	public void killTimeEstimatedWithoutCompletionMessage()
+	{
+		tick(true, false);
+		ticks(9);
+		tick(true, true); // 10 ticks in
+		tracker.onNpcDeath("Corrupted Hunllef");
+		for (int i = 1; i < RunTracker.SAVE_DELAY_TICKS; i++)
+		{
+			assertNull(tick(true, true));
+		}
+		Run run = tick(true, true);
+		int expected = 10 + RunTracker.KILL_COUNT_DELAY_TICKS;
+		assertEquals(Integer.valueOf(expected), run.getSplits().get(Milestone.HUNLLEF));
+		assertEquals(expected, run.getTicks());
+
+		// Teleported out before the estimate: stops where it got to
+		tick(false, false);
+		tick(true, false);
+		ticks(9);
+		tick(true, true);
+		tracker.onNpcDeath("Corrupted Hunllef");
+		tick(true, true);
+		tick(true, true);
+		Run left = tick(false, false);
+		assertTrue(left.isCompleted());
+		assertEquals(Integer.valueOf(12), left.getSplits().get(Milestone.HUNLLEF));
+	}
+
+	@Test
 	public void pluginStartedMidRunDoesNotStartRun()
 	{
 		RunTracker fresh = new RunTracker();
@@ -272,6 +336,36 @@ public class RunTrackerTest
 		assertEquals(Integer.valueOf(571), TimeFormat.parseOfficial("5:42.60."));
 		assertEquals(Integer.valueOf(100), TimeFormat.parseOfficial("1:00"));
 		assertNull(TimeFormat.parseOfficial("soon"));
+	}
+
+	@Test
+	public void hunllefThresholdNeedsHpBelowIt()
+	{
+		tick(true, false);
+		tick(true, true);
+		tracker.onBossHealth(0.509);
+		tracker.onBossHealth(0.50); // exactly half isn't below half yet
+		assertFalse(tracker.getCurrent().hasSplit(Milestone.HUNLLEF_50));
+		tracker.onBossHealth(0.499);
+		assertTrue(tracker.getCurrent().hasSplit(Milestone.HUNLLEF_50));
+		assertFalse(tracker.getCurrent().hasSplit(Milestone.HUNLLEF_25));
+	}
+
+	@Test
+	public void bossHealthFromBarAndHud()
+	{
+		// Bar of 30 with 1000 max HP: ratio 15 covers 483-516 HP
+		assertEquals(0.509, RunTracker.bossHealthFraction(15, 30, 509, 1000), 1e-9);
+		assertEquals(0.499, RunTracker.bossHealthFraction(15, 30, 499, 1000), 1e-9);
+		// HUD off or stale (doesn't match the bar): highest HP the bar allows, never below 50%
+		double bar15 = RunTracker.bossHealthFraction(15, 30, 0, 0);
+		assertTrue(bar15 >= 0.5 && bar15 < 15 / 29.0);
+		assertEquals(bar15, RunTracker.bossHealthFraction(15, 30, 200, 1000), 0);
+		assertTrue(RunTracker.bossHealthFraction(14, 30, 0, 0) < 0.5);
+		// Unknown before the first hit, 0 once dead, never above full
+		assertEquals(-1, RunTracker.bossHealthFraction(-1, -1, 509, 1000), 0);
+		assertEquals(0, RunTracker.bossHealthFraction(0, 30, 0, 1000), 0);
+		assertTrue(RunTracker.bossHealthFraction(30, 30, 0, 0) <= 1);
 	}
 
 	@Test

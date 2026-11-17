@@ -169,6 +169,42 @@ public class RunStore
 		}
 	}
 
+	/**
+	 * Removes a run for good: its file, and its part in the PB, best splits and stats. For runs
+	 * that shouldn't count, like a test kill. The file is deleted on the same background thread
+	 * as saves, so it can't be written back by a save that was still pending.
+	 *
+	 * @return false if the run wasn't saved (or was already deleted)
+	 */
+	public synchronized boolean delete(Run run)
+	{
+		List<Run> updated = new ArrayList<>(runs);
+		if (!updated.remove(run))
+		{
+			return false;
+		}
+		update(updated);
+
+		Filepath dir = runsDir;
+		if (dir == null)
+		{
+			return true;
+		}
+		Filepath file = dir.joinSegment(run.getStartedAt() + ".json");
+		executor.execute(() ->
+		{
+			try
+			{
+				file.deleteIfExists();
+			}
+			catch (IOException e)
+			{
+				log.warn("Failed to delete Gauntlet run {}", file, e);
+			}
+		});
+		return true;
+	}
+
 	/** Corrupted runs, newest first. */
 	public List<Run> getRuns()
 	{

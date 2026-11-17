@@ -3,6 +3,8 @@ package com.cgsplits;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -24,9 +26,14 @@ import java.util.Map;
 import javax.inject.Inject;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import net.runelite.client.ui.ColorScheme;
@@ -48,6 +55,7 @@ class CGSplitsPanel extends PluginPanel
 
 	private final RunStore runStore;
 	private final CGSplitsConfig config;
+	private final CGSplitsPlugin plugin;
 	private final SessionTracker session;
 	private final JPanel content = new JPanel(new DynamicGridLayout(0, 1, 0, 4));
 
@@ -83,6 +91,7 @@ class CGSplitsPanel extends PluginPanel
 	{
 		this.runStore = runStore;
 		this.config = config;
+		this.plugin = plugin;
 		this.session = plugin.getSession();
 
 		setBorder(new EmptyBorder(10, 10, 10, 10));
@@ -186,7 +195,11 @@ class CGSplitsPanel extends PluginPanel
 		updateStats();
 	}
 
-	/** A clickable tab label for the top of a card; style it with {@link #styleTab}. */
+	/**
+	 * A clickable tab label for the top of a card; style it with {@link #styleTab}. Switches on
+	 * mouse press: Swing drops mouseClicked if the mouse moves even a pixel between press and
+	 * release, which made quick clicks miss.
+	 */
 	private static JLabel tab(String text, Runnable onClick)
 	{
 		JLabel tab = new JLabel(text, SwingConstants.CENTER);
@@ -195,9 +208,12 @@ class CGSplitsPanel extends PluginPanel
 		tab.addMouseListener(new MouseAdapter()
 		{
 			@Override
-			public void mouseClicked(MouseEvent e)
+			public void mousePressed(MouseEvent e)
 			{
-				onClick.run();
+				if (SwingUtilities.isLeftMouseButton(e))
+				{
+					onClick.run();
+				}
 			}
 		});
 		return tab;
@@ -705,14 +721,26 @@ class CGSplitsPanel extends PluginPanel
 		row.setBackground(background);
 		row.setBorder(new EmptyBorder(4, 6, 4, 6));
 		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		row.setToolTipText("Show this run's splits");
+		row.setToolTipText("Show this run's splits. Right-click to delete it.");
+
+		// Right-click > Delete Run, e.g. for a test kill that shouldn't count towards averages
+		JPopupMenu menu = new JPopupMenu();
+		JMenuItem delete = new JMenuItem("Delete Run");
+		delete.addActionListener(e -> confirmDelete(run));
+		menu.add(delete);
+		row.setComponentPopupMenu(menu);
+		inheritPopupMenu(row);
 		row.addMouseListener(new MouseAdapter()
 		{
 			@Override
-			public void mouseClicked(MouseEvent e)
+			public void mousePressed(MouseEvent e)
 			{
-				selected = run;
-				refresh();
+				// On press, like the tabs, so a click with a little mouse movement still counts
+				if (SwingUtilities.isLeftMouseButton(e))
+				{
+					selected = run;
+					refresh();
+				}
 			}
 
 			@Override
@@ -728,6 +756,42 @@ class CGSplitsPanel extends PluginPanel
 			}
 		});
 		return row;
+	}
+
+	/** Lets right-clicks anywhere on a row, including its labels, open the row's menu. */
+	private static void inheritPopupMenu(Container container)
+	{
+		for (Component child : container.getComponents())
+		{
+			if (child instanceof JComponent)
+			{
+				((JComponent) child).setInheritsPopupMenu(true);
+			}
+			if (child instanceof Container)
+			{
+				inheritPopupMenu((Container) child);
+			}
+		}
+	}
+
+	/** Asks first, since a deleted run can't be brought back. */
+	private void confirmDelete(Run run)
+	{
+		String what = run.isCompleted() ? "finished in " + finalTime(run) : resultText(run).toLowerCase();
+		int choice = JOptionPane.showConfirmDialog(this,
+			"<html>Delete this run (" + when(run.getStartedAt()) + ", " + what + ")?<br>"
+				+ "It's removed from your PB, splits and averages for good.</html>",
+			"Delete Run", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+		if (choice != JOptionPane.YES_OPTION)
+		{
+			return;
+		}
+		if (selected == run)
+		{
+			selected = null; // show the newest run instead
+		}
+		plugin.deleteRun(run);
+		updateStats();
 	}
 
 	private static String resultText(Run run)
